@@ -1,70 +1,82 @@
 ﻿<Window x:Class="ByPass.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MainWindow" Height="800" Width="1015">
+        Title="ByPass Proxy" Height="850" Width="1015">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="10"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="10"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+        
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
-        <Border Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray" Grid.Row="0">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray">
             <StackPanel Orientation="Horizontal">
                 <Label Content="ListenPort:"/>
-                <TextBox Text="{Binding ListenPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="35"/>
+                <TextBox Text="{Binding ListenPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNotRunning}" Width="35"/>
 
                 <Button Content="{Binding ActionButtonText}" Command="{Binding ActionButtonCommand}" Width="80" Margin="300,0,0,0"/>
                 
                 <Label Content="Target:" Margin="150,0,0,0" HorizontalAlignment="Right"/>
-                <TextBox Text="{Binding TargetHostAndPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                <TextBox Text="{Binding TargetHostAndPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNotRunning}"
                          Width="250" HorizontalAlignment="Right"/>
 
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal">
-            <!-- Client -->
-            <Border Margin="10" Padding="10" MinWidth="480" BorderThickness="1" BorderBrush="Gray">
-                <Grid>
-                    <TextBlock Text="{Binding Client.TotalKb, StringFormat='Request Total KB: \{0\}'}" Margin="5"/>
-                    <CheckBox Content="Show ASCII" IsChecked="{Binding Client.ShowASCII, Mode=TwoWay}" 
-                              HorizontalAlignment="Right" Margin="5"/>
-                    <TextBox Text="{Binding Client.Data, Mode=OneWay}" MinHeight="300" Margin="0,25,0,0"
-                                 IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"/>
-                </Grid>
-            </Border>
-
-            <!-- Target -->
-            <Border Margin="10" Padding="10" MinWidth="480" BorderThickness="1" BorderBrush="Gray">
-                <Grid>
-                    <TextBlock Text="{Binding Target.TotalKb, StringFormat='Request Total KB: \{0\}'}" Margin="5"/>
-                    <CheckBox Content="Show ASCII" IsChecked="{Binding Target.ShowASCII, Mode=TwoWay}" 
-                              HorizontalAlignment="Right" Margin="5"/>
-                    <TextBox Text="{Binding Target.Data, Mode=OneWay}" MinHeight="300" Margin="0,25,0,0"
-                                 IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"/>
-                </Grid>
-            </Border>
-        </StackPanel>
-
-        <Border Grid.Row="2" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray" >
-            <Grid>
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray" >
+            <StackPanel Orientation="Horizontal">
                 <Label Content="Delay in ms:"/>
                 <TextBox Text="{Binding DelayInt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                          HorizontalAlignment="Left" Width="100" Margin="75,0,0,0"/>
+
+                <CheckBox Content="Single Connection" IsChecked="{Binding IsSingleConnection, Mode=TwoWay}" Margin="50,0,0,0"/>
+                
+                <TextBlock Text="{Binding Status}" HorizontalAlignment="Right" Margin="100,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Client -->
+        <Border Grid.Row="2" Grid.Column="0" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray">
+            <Grid>
+                <TextBlock Text="{Binding Client.TotalKb, StringFormat='Request Total KB: \{0\}'}" Margin="5"/>
+                <CheckBox Content="Show ASCII" IsChecked="{Binding ClientShowASCII, Mode=TwoWay}" IsEnabled="{Binding IsNotRunning}"
+                              HorizontalAlignment="Right" Margin="5"/>
+                <TextBox Text="{Binding Client.Data, Mode=OneWay}" MinHeight="250" MinWidth="450" 
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             Margin="0,25,0,0" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True" />
             </Grid>
         </Border>
 
+        <!-- Target -->
+        <Border Grid.Row="2" Grid.Column="1" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray">
+            <Grid>
+                <TextBlock Text="{Binding Target.TotalKb, StringFormat='Request Total KB: \{0\}'}" Margin="5"/>
+                <CheckBox Content="Show ASCII" IsChecked="{Binding TargetShowASCII, Mode=TwoWay}" IsEnabled="{Binding IsNotRunning}"
+                              HorizontalAlignment="Right" Margin="5"/>
+                <TextBox Text="{Binding Target.Data, Mode=OneWay}" MinHeight="250" MinWidth="450" 
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             Margin="0,25,0,0" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"/>
+            </Grid>
+        </Border>
 
-        <Border Grid.Row="3" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray" >
-            <ListBox ItemsSource="{Binding Log}" MinHeight="200"/>
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray">
+            <Grid>
+                <Label Content="Log:" Margin="-5,-5,5,5"/>
+                <ListBox ItemsSource="{Binding Log}" MinHeight="250" Margin="0,25,0,0" />
+            </Grid>
         </Border>
     </Grid>
 </Window>

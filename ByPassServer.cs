@@ -20,30 +20,42 @@ namespace ByPassProxy
         private int _toPort;
 
         private TcpListener _tcpListener;
-        TcpClient _client;
-        TcpClient _target;
+        CancellationTokenSource _listenerToken;
 
-        CancellationTokenSource _clientToTarget;
-        CancellationTokenSource _targetToClient;
-        CancellationTokenSource _listenerToken = new CancellationTokenSource();
+        List<ConnectionCanceller> _sessionCancelTokens;
 
         private bool _isRunning;
-        private bool _isConnected;
-        private bool _isCancelled;
-
         private int _latency = 0;
+        private bool _isSingleConnection = false;
+
+        private Action<byte[], int, int> _clientLogger = null;
+        private Action<byte[], int, int> _targetLogger = null;
         //================================================================================
         #endregion
 
         #region Constructor
         //================================================================================
-        public ProxyService(int listenPort, string toHost, int toPort, ILogger logger)
+        public ProxyService(int listenPort, string toHost, int toPort, ILogger logger, 
+            Action<byte[], int, int> clientLogger = null, Action<byte[], int, int> targetLogger = null)
         {
             _logger = logger;
             _listenPort = listenPort;
             _toHost = toHost;
             _toPort = toPort;
+
+            _clientLogger = clientLogger;
+            _targetLogger = targetLogger;
         }
+        //================================================================================
+        #endregion
+
+        #region Properties and Events
+        //================================================================================
+        public class ByPassStateEventArgs : EventArgs { public int ActiveSessions { get; set; } public bool IsRunning { get; set; } }
+        public event EventHandler<ByPassStateEventArgs> ByPassStateChanged = delegate { };
+        //================================================================================
+        public int ActiveSessions { get; private set; }
+        public bool IsRunning { get { return _isRunning; } }
         //================================================================================
         #endregion
 
@@ -53,26 +65,27 @@ namespace ByPassProxy
         {
             if (!_isRunning) return;
 
-            _isCancelled = true;
-
             _listenerToken.Cancel();
             _tcpListener.Stop();
 
-            if (_clientToTarget != null) _clientToTarget.Cancel();
-            if (_clientToTarget != null) _targetToClient.Cancel();
+            _sessionCancelTokens.ForEach(a => a.Dispose());
+            _sessionCancelTokens.Clear();
 
-            if (_client != null) _client.Close();
-            if (_target != null) _target.Close();
+            _isRunning = false;
+            RaiseStateChanged(0, false);
         }
         //================================================================================
         public void StartProxy()
         {
             if (!_isRunning)
             {
-                _isCancelled = false;
                 _isRunning = true;
                 _tcpListener = new TcpListener(IPAddress.Any, _listenPort);
                 _tcpListener.Start();
+
+                _sessionCancelTokens = new List<ConnectionCanceller>();
+                _listenerToken = new CancellationTokenSource();
+                RaiseStateChanged(0, true);
                 Task.Factory.StartNew(StartProxySync, _listenerToken.Token);
             }
         }
@@ -81,20 +94,43 @@ namespace ByPassProxy
         {
             _latency = ms;
         }
+        public void SetIsSingleConnection(bool isSingleConnection)
+        {
+            _isSingleConnection = isSingleConnection;
+        }
         //================================================================================
         #endregion
 
         #region Private Methods
         //================================================================================
+        private void RaiseStateChanged(int sessions, bool isRunning)
+        {
+            ActiveSessions = sessions;
+            var handles = ByPassStateChanged;
+            handles(this, new ByPassStateEventArgs(){ ActiveSessions = sessions, IsRunning=isRunning});
+        }
+        //================================================================================
         private void StartProxySync()
         {
             _logger.Info("Starting Proxy");
+            var token = _listenerToken.Token;
 
-            _client = WaitForClients();
-            _target = ConnectToTarget(_toHost, _toPort);
+            try
+            {
+                while (_isRunning && !token.IsCancellationRequested)
+                {
+                    var client = WaitForClients();
+                    var target = ConnectToTarget(_toHost, _toPort);
 
-            StartTransfers(_client, _target);
-            _isConnected = true;
+                    StartTransfers(client, target);
+
+                    if (_isSingleConnection) break;
+                }
+                _tcpListener.Stop();
+                _isRunning = false;
+                RaiseStateChanged(ActiveSessions, false);
+            }
+            catch { }
         }
         //================================================================================
         private TcpClient WaitForClients()
@@ -135,17 +171,23 @@ namespace ByPassProxy
         //================================================================================
         private void StartTransfers(TcpClient client, TcpClient target)
         {
+            var token = new CancellationTokenSource();
+
             //Start task to send data from client to target
-            _clientToTarget = new CancellationTokenSource();
             var clientTast = Task.Factory.StartNew(_ =>
-                DoWhileNotCancelled(client, target, _clientToTarget.Token, _logger.ClientBytes, "Client"), 
-                _clientToTarget.Token, TaskCreationOptions.LongRunning);
+                DoWhileNotCancelled(client, target, token.Token, _logger.ClientBytes, "Client"),
+                token.Token, TaskCreationOptions.LongRunning);
 
             //Start task to send reply from target back to client
-            _targetToClient = new CancellationTokenSource();
             var targetTast = Task.Factory.StartNew(_ =>
-                DoWhileNotCancelled(target, client, _targetToClient.Token, _logger.TargetBytes, "Target"), 
-                _targetToClient.Token, TaskCreationOptions.LongRunning);
+                DoWhileNotCancelled(target, client, token.Token, _logger.TargetBytes, "Target"),
+                token.Token, TaskCreationOptions.LongRunning);
+
+            lock (_locker)
+            {
+                _sessionCancelTokens.Add(new ConnectionCanceller(token, client, target));
+                RaiseStateChanged(_sessionCancelTokens.Count, true);
+            }
 
             _logger.Info("Started Transfers");
         }
@@ -159,7 +201,7 @@ namespace ByPassProxy
             {
                 while (!token.IsCancellationRequested && from.Connected)
                 {
-                    if (!CopyFromStream(fromStream, toStream, bytesRead))
+                    if (!CopyFromStream(fromStream, toStream, bytesRead, name == "Target" ? _targetLogger : _clientLogger))
                     {
                         _logger.Info("Can not read from {0}", name);
                         break;
@@ -168,6 +210,33 @@ namespace ByPassProxy
                 }
                 CheckClientDisconnect(from, to);
             }
+        }
+        //================================================================================        
+        private void CheckClientDisconnect(TcpClient from, TcpClient to)
+        {
+            try
+            {
+                if (!from.Connected && !to.Connected)
+                {
+                    lock (_locker)
+                    {
+                        var token = _sessionCancelTokens.FirstOrDefault(a => a.IsOwnerForAny(from, to));
+                        if (token != null)
+                        {
+                            _sessionCancelTokens.Remove(token);
+                            var running = _isRunning && !_isSingleConnection;
+                            RaiseStateChanged(_sessionCancelTokens.Count, running);
+                        }
+                    }
+
+                }
+
+                if (!from.Connected || IsSocketDisconnected(from.Client))//from connection was disconnected. Log and disconnect other.
+                    _logger.Info("{0} client disconnected.", ((IPEndPoint)from.Client.RemoteEndPoint).Address);
+            }
+            catch { }
+            Disconnect(from);
+            Disconnect(to);
         }
         //================================================================================
         private void Disconnect(TcpClient client)
@@ -185,35 +254,6 @@ namespace ByPassProxy
                 _logger.Info("{0} client disconnected.", address);
             }
         }
-        //================================================================================        
-        private void CheckClientDisconnect(TcpClient from, TcpClient to)
-        {
-            lock(_locker)
-            {
-                if (_isCancelled)//User clicked the STOP button
-                {
-                    if(from.Connected && to.Connected)
-                        _logger.Info("Disconnecting...");
-
-                    Disconnect(from);
-                    Disconnect(to);
-                    return;
-                }
-
-                if (!from.Connected && !to.Connected)//Disconnection second time round
-                {
-                    //Restart the proxy
-                    StopProxy();
-                    StartProxy();
-                }
-                else if (!from.Connected || IsSocketDisconnected(from.Client))//from connection was disconnected. Log and disconnect other.
-                {
-                    _logger.Info("{0} client disconnected.", ((IPEndPoint)from.Client.RemoteEndPoint).Address);
-                    Disconnect(from);
-                    Disconnect(to);
-                }
-            }
-        }
         //================================================================================
         private bool IsSocketDisconnected(Socket socket)
         {
@@ -221,36 +261,41 @@ namespace ByPassProxy
             catch (SocketException) { return false; }
         }
         //================================================================================
-        private bool CopyFromStream(NetworkStream from, NetworkStream to, Action<int> bytesRead)
+        private bool CopyFromStream(NetworkStream from, NetworkStream to, Action<int> bytesRead, Action<byte[], int, int> logger = null)
         {
-            if (from.CanRead && to.CanWrite)
+            try
             {
-                byte[] myReadBuffer = new byte[1000024];
-                int numberOfBytesRead = 0;
-
-                do
+                if (from.CanRead && to.CanWrite)
                 {
-                    numberOfBytesRead = from.Read(myReadBuffer, 0, myReadBuffer.Length);
-                    if (_latency != 0) Thread.Sleep(_latency);
-                    if (numberOfBytesRead != 0)
-                    {
-                        to.Write(myReadBuffer, 0, numberOfBytesRead);
-                        bytesRead(numberOfBytesRead);
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                while (from.DataAvailable);
+                    byte[] myReadBuffer = new byte[1000024];
+                    int numberOfBytesRead = 0;
 
-                to.Flush();
-                return true;
+                    do
+                    {
+                        numberOfBytesRead = from.Read(myReadBuffer, 0, myReadBuffer.Length);
+                        if (_latency != 0) Thread.Sleep(_latency);
+                        if (numberOfBytesRead != 0)
+                        {
+                            to.Write(myReadBuffer, 0, numberOfBytesRead);
+                            bytesRead(numberOfBytesRead);
+                            if (logger != null) logger(myReadBuffer, 0, numberOfBytesRead);//For ASCII logging
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    while (from.DataAvailable);
+
+                    to.Flush();
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
             }
-            else
-            {
-                return false;
-            }
+            catch { return false; }
         }
         //================================================================================
         #endregion

@@ -15,6 +15,7 @@ namespace ByPassProxy
     {
         #region Fields
         //================================================================================
+        private readonly ConfigStore _configStore;
         private ProxyService _service; 
         //================================================================================
         #endregion
@@ -22,13 +23,16 @@ namespace ByPassProxy
         //================================================================================
         public MainViewModel()
         {
+            _configStore = new ConfigStore();
             Log = new ObservableCollection<string>();
 
-            ListenPort = 5032;
-            TargetHostAndPort = "172.26.145.217:5032";
+            ListenPort = _configStore.ListenPort;
+            TargetHostAndPort = _configStore.Target;
+            _delayInt = _configStore.DelayMs;
+            _isSingleConnection = _configStore.SingleConnection;
+
             Client = new SocketViewModel();
             Target = new SocketViewModel();
-
         }
         //================================================================================
 
@@ -45,7 +49,7 @@ namespace ByPassProxy
         public string TargetHostAndPort
         {
             get { return _targetHost + ":" + _targetPort; }
-            set { _targetPort = 0;  var sp = value.Split(':'); _targetHost = sp[0]; _targetPort = int.Parse(sp[1]); }
+            set { _targetPort = 0; var sp = value.Split(':'); if (sp.Length < 1) return; _targetHost = sp[0]; _targetPort = int.Parse(sp[1]); }
         }
 
         private int _delayInt = 0;
@@ -54,11 +58,40 @@ namespace ByPassProxy
             get { return _delayInt; }
             set { _delayInt = value; if (_service != null) _service.SetLatency(value); }
         }
+
+        private bool _isSingleConnection = false;
+        public bool IsSingleConnection
+        {
+            get { return _isSingleConnection; }
+            set { _isSingleConnection = value; if (_service != null) _service.SetIsSingleConnection(value); }
+        }
+
+        public string Status
+        {
+            get
+            {
+                return string.Format("{0}, Active Sessions: {1}", 
+                    _service != null ? _service.IsRunning ? "Running" : "Stopped" : "Stopped",
+                    _service != null ? _service.ActiveSessions : 0);
+            }
+            set { RaisePropertyChanged("Status"); }
+        }
+
+        public bool ClientShowASCII { get; set; }
+        public bool TargetShowASCII { get; set; }
         //================================================================================
 
         //================================================================================
         private bool _isRunning;
-        public string ActionButtonText { get { return _isRunning ? "Stop" : "Start"; } }
+        public bool IsRunning 
+        { 
+            get { return _isRunning; } 
+            set  { _isRunning = value; RaisePropertyChanged("IsRunning"); RaisePropertyChanged("IsNotRunning"); }
+        }
+        public bool IsNotRunning { get { return !_isRunning; } }
+        //================================================================================
+
+        public string ActionButtonText { get { return IsRunning ? "Stop" : "Start"; } }
         public ICommand ActionButtonCommand { get { 
             return new ActionCommand(OnActionButtonClicked, 
                 ()=>ListenPort!=0 && _targetPort!=0 && !string.IsNullOrWhiteSpace(_targetHost)); } }
@@ -69,28 +102,18 @@ namespace ByPassProxy
         //================================================================================
         #endregion
 
+        #region Public Methods
         //================================================================================
-        private void AddToLog(string message)
+        public void OnViewClosing()
         {
-            Log.Insert(0, message);
+            //Save the options
+            _configStore.ListenPort = ListenPort;
+            _configStore.Target = TargetHostAndPort;
+            _configStore.DelayMs = _delayInt;
+            _configStore.SingleConnection = _isSingleConnection;
+            _configStore.Save();
         }
 
-        private void OnActionButtonClicked()
-        {
-            if (!_isRunning)
-            {
-                _service = new ProxyService(ListenPort, _targetHost, _targetPort, this);
-                _service.StartProxy();
-                _isRunning = true; RaisePropertyChanged("ActionButtonText");
-            }
-            else
-            {
-                if (_service != null) _service.StopProxy();
-                _isRunning = false; RaisePropertyChanged("ActionButtonText");
-            }
-        }
-        //================================================================================
-    
         public void Info(string message, params object[] param)
         {
             Queue(() => AddToLog(DateTime.Now.ToShortTimeString() + ": " + string.Format(message, param)));
@@ -108,17 +131,71 @@ namespace ByPassProxy
 
         public void ClientData(string message)
         {
- 	        throw new NotImplementedException();
+            throw new NotImplementedException();
         }
 
         public void TargetBytes(int bytes)
         {
             Target.TotalKb = bytes / 1024d;
-        } 
+        }
 
         public void TargetData(string message)
         {
- 	        throw new NotImplementedException();
+            throw new NotImplementedException();
         }
+        //================================================================================
+        #endregion
+
+        #region Private Methods
+        //================================================================================
+        private void AddToLog(string message)
+        {
+            Log.Insert(0, message);
+        }
+        //================================================================================
+        private void OnActionButtonClicked()
+        {
+            if (!IsRunning)
+            {
+                _service = SwapServiceEvents();
+                _service.StartProxy();
+                IsRunning = true; RaisePropertyChanged("ActionButtonText");
+            }
+            else
+            {
+                if (_service != null) _service.StopProxy();
+                IsRunning = false; RaisePropertyChanged("ActionButtonText");
+            }
+        }
+        //================================================================================
+        private ProxyService SwapServiceEvents()
+        {
+            if (_service != null)
+                _service.ByPassStateChanged -= OnServiceStateChanged;
+
+            Action<byte[], int, int> clog = null;
+            Action<byte[], int, int> tlog = null;
+
+            if (ClientShowASCII) clog = Client.LogData;
+            if (TargetShowASCII) tlog = Target.LogData;
+
+            var service = new ProxyService(ListenPort, _targetHost, _targetPort, this, clog, tlog);
+            service.SetIsSingleConnection(IsSingleConnection);
+            service.SetLatency(this.DelayInt);
+            service.ByPassStateChanged += OnServiceStateChanged;
+            return service;
+        }
+        //================================================================================
+        private void OnServiceStateChanged(object o, ByPassProxy.ProxyService.ByPassStateEventArgs args)
+        {
+            Status = string.Empty;
+            if (!args.IsRunning && args.ActiveSessions == 0)
+            {
+                IsRunning = false;
+                RaisePropertyChanged("ActionButtonText");
+            }
+        }
+        //================================================================================
+        #endregion
     }
 }

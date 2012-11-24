@@ -32,6 +32,7 @@ namespace ByPass
             base.OnInitialized(e);
 
             this.DataContext = new MainViewModel();
+            this.Closing += (s, ee) => ((MainViewModel)DataContext).OnViewClosing();
         }
 
     }
