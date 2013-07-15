@@ -19,6 +19,7 @@ namespace ByPassProxy
             ASCIIEncoding encoder = new ASCIIEncoding();
             var request = encoder.GetString(buffer, from, length);
 
+
             Data = Data + request;
             RaisePropertyChanged("Data");
         }

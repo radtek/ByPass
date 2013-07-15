@@ -52,11 +52,12 @@
         <Border Grid.Row="2" Grid.Column="0" Margin="10" Padding="10" BorderThickness="1" BorderBrush="Gray">
             <Grid>
                 <TextBlock Text="{Binding Client.TotalKb, StringFormat='Request Total KB: \{0\}'}" Margin="5"/>
+                <Button Content="Send" HorizontalAlignment="Center" Command="{Binding SendClientCommand}"/>
                 <CheckBox Content="Show ASCII" IsChecked="{Binding ClientShowASCII, Mode=TwoWay}" IsEnabled="{Binding IsNotRunning}"
                               HorizontalAlignment="Right" Margin="5"/>
-                <TextBox Text="{Binding Client.Data, Mode=OneWay}" MinHeight="250" MinWidth="450" 
+                <TextBox Text="{Binding Client.Data, NotifyOnTargetUpdated=True, UpdateSourceTrigger=PropertyChanged}" MinHeight="250" MinWidth="450" 
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                             Margin="0,25,0,0" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True" />
+                             Margin="0,25,0,0"  AcceptsReturn="True" AcceptsTab="True" />
             </Grid>
         </Border>
 

@@ -28,23 +28,23 @@ namespace ByPassProxy
         private int _latency = 0;
         private bool _isSingleConnection = false;
 
-        private Action<byte[], int, int> _clientLogger = null;
-        private Action<byte[], int, int> _targetLogger = null;
+        private IByPasser _clientLogger = null;
+        private IByPasser _targetLogger = null;
         //================================================================================
         #endregion
 
         #region Constructor
         //================================================================================
-        public ProxyService(int listenPort, string toHost, int toPort, ILogger logger, 
-            Action<byte[], int, int> clientLogger = null, Action<byte[], int, int> targetLogger = null)
+        public ProxyService(int listenPort, string toHost, int toPort, ILogger logger,
+            IByPasser clientLogger = null, IByPasser targetLogger = null)
         {
             _logger = logger;
             _listenPort = listenPort;
             _toHost = toHost;
             _toPort = toPort;
 
-            _clientLogger = clientLogger;
-            _targetLogger = targetLogger;
+            _clientLogger = clientLogger != null ? clientLogger : ByPasser.Default;
+            _targetLogger = targetLogger != null ? targetLogger : ByPasser.Default;
         }
         //================================================================================
         #endregion
@@ -261,7 +261,7 @@ namespace ByPassProxy
             catch (SocketException) { return false; }
         }
         //================================================================================
-        private bool CopyFromStream(NetworkStream from, NetworkStream to, Action<int> bytesRead, Action<byte[], int, int> logger = null)
+        private bool CopyFromStream(NetworkStream from, NetworkStream to, Action<int> bytesRead, IByPasser logger)
         {
             try
             {
@@ -276,9 +276,8 @@ namespace ByPassProxy
                         if (_latency != 0) Thread.Sleep(_latency);
                         if (numberOfBytesRead != 0)
                         {
-                            to.Write(myReadBuffer, 0, numberOfBytesRead);
+                            numberOfBytesRead = logger.Write(to, myReadBuffer, 0, numberOfBytesRead);
                             bytesRead(numberOfBytesRead);
-                            if (logger != null) logger(myReadBuffer, 0, numberOfBytesRead);//For ASCII logging
                         }
                         else
                         {

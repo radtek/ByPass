@@ -62,6 +62,24 @@ namespace ByPassProxy
             }
             set { Set("DelayMs",value.ToString()); }
         }
+        public bool ShowASCIIRequest
+        {
+            get
+            {
+                bool value;
+                return bool.TryParse(ConfigurationManager.AppSettings["ShowASCIIRequest"], out value) ? value : false;
+            }
+            set { Set("ShowASCIIRequest", value.ToString()); }
+        }
+        public bool ShowASCIIResponse
+        {
+            get
+            {
+                bool value;
+                return bool.TryParse(ConfigurationManager.AppSettings["ShowASCIIResponse"], out value) ? value : false;
+            }
+            set { Set("ShowASCIIResponse", value.ToString()); }
+        }
 
         private void Set(string key, string value)
         {

@@ -58,6 +58,7 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="ActionCommand.cs" />
+    <Compile Include="ByPasser.cs" />
     <Compile Include="Configuration\ConfigStore.cs" />
     <Compile Include="ConnectionCanceller.cs" />
     <Compile Include="ILogger.cs" />

@@ -91,10 +91,21 @@ namespace ByPassProxy
         public bool IsNotRunning { get { return !_isRunning; } }
         //================================================================================
 
+        //================================================================================
         public string ActionButtonText { get { return IsRunning ? "Stop" : "Start"; } }
         public ICommand ActionButtonCommand { get { 
             return new ActionCommand(OnActionButtonClicked, 
                 ()=>ListenPort!=0 && _targetPort!=0 && !string.IsNullOrWhiteSpace(_targetHost)); } }
+        //================================================================================
+        
+        //================================================================================
+        public ICommand SendClientCommand
+        {
+            get
+            {
+                return new ActionCommand(SendClientClicked);
+            }
+        }
         //================================================================================
 
         //================================================================================
@@ -111,6 +122,8 @@ namespace ByPassProxy
             _configStore.Target = TargetHostAndPort;
             _configStore.DelayMs = _delayInt;
             _configStore.SingleConnection = _isSingleConnection;
+            _configStore.ShowASCIIRequest = ClientShowASCII;
+            _configStore.ShowASCIIResponse = TargetShowASCII;
             _configStore.Save();
         }
 
@@ -168,16 +181,21 @@ namespace ByPassProxy
             }
         }
         //================================================================================
+        private void SendClientClicked()
+        {
+
+        }
+        //================================================================================
         private ProxyService SwapServiceEvents()
         {
             if (_service != null)
                 _service.ByPassStateChanged -= OnServiceStateChanged;
 
-            Action<byte[], int, int> clog = null;
-            Action<byte[], int, int> tlog = null;
+            IByPasser clog = new HostReplaceBypasser(_targetHost, new LoggingBypasser(Client.LogData));
+            IByPasser tlog = new LoggingBypasser(Target.LogData);
 
-            if (ClientShowASCII) clog = Client.LogData;
-            if (TargetShowASCII) tlog = Target.LogData;
+            //if (ClientShowASCII) clog = Client.LogData;
+            //if (TargetShowASCII) tlog = Target.LogData;
 
             var service = new ProxyService(ListenPort, _targetHost, _targetPort, this, clog, tlog);
             service.SetIsSingleConnection(IsSingleConnection);
